@@ -11,6 +11,7 @@
  * - Run: ISSUER_PRIVATE_KEY=0x... node server.js
  */
 const express = require('express');
+const cors = require('cors'); 
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
@@ -21,7 +22,7 @@ const { Resolver } = require('did-resolver');
 const { getResolver: ethrGetResolver } = require('ethr-did-resolver');
 const { ethers } = require('ethers');
 
-const app = express();
+app.use(cors());
 app.use(express.json());
 
 const DATA_DIR = path.join(__dirname, 'data');
