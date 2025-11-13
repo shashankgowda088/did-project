@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DID & VC - Frontend Demo (HTML + CSS + JS)</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--accent:#6ee7b7;--muted:#9aa7b6;--glass:rgba(255,255,255,0.03)}
+    *{box-sizing:border-box;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{margin:0;background:linear-gradient(180deg,#071029 0%, #07182a 50%);color:#e6f0f6;min-height:100vh}
+    .wrap{max-width:1100px;margin:28px auto;padding:20px}
+    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+    h1{font-size:20px;margin:0}
+    .row{display:flex;gap:16px}
+    .card{background:var(--card);padding:16px;border-radius:12px;box-shadow:0 6px 18px rgba(2,6,23,0.6);min-width:280px}
+    .card.small{width:320px}
+    label{display:block;color:var(--muted);font-size:13px;margin-bottom:6px}
+    input[type=text], input[type=password], textarea, select{width:100%;padding:10px;border-radius:8px;border:none;background:var(--glass);color:inherit}
+    button{background:var(--accent);border:none;padding:10px 12px;border-radius:8px;color:#012;cursor:pointer;font-weight:600}
+    .muted{color:var(--muted);font-size:13px}
+    .sp{height:12px}
+    .cols{display:grid;grid-template-columns:1fr 360px;gap:16px}
+    pre{background:rgba(255,255,255,0.02);padding:12px;border-radius:8px;overflow:auto;font-size:13px}
+    .list{max-height:320px;overflow:auto;margin-top:8px}
+    .vc-item{background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;margin-bottom:8px}
+    .small-btn{padding:6px 8px;border-radius:6px;font-size:13px}
+    footer{margin-top:18px;color:var(--muted);font-size:13px}
+    .success{color:#8ef0c1}
+    .danger{color:#ffb4b4}
+    .hash{font-family:monospace;background:rgba(255,255,255,0.02);padding:6px;border-radius:6px;display:inline-block}
+    @media(max-width:900px){.cols{grid-template-columns:1fr} .row{flex-direction:column}}
+  </style>
+  <!-- ethers.js for key generation and signing -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.9.0/dist/ethers.umd.min.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>DID & VC — Frontend Demo (HTML + CSS + JS)</h1>
+      <div class="muted">Local demo — keys stay in browser<br>Signatures use Ethereum keys (did:ethr)</div>
+    </header>
+
+    <div class="cols">
+      <main class="card">
+        <section id="walletSection">
+          <h3>1 — Wallet (Create / Import)</h3>
+          <div class="sp"></div>
+          <label>Passphrase (used to encrypt key in localStorage)</label>
+          <input id="passphrase" type="password" placeholder="Enter a passphrase to encrypt your key" />
+          <div class="sp"></div>
+          <div style="display:flex;gap:8px">
+            <button id="createKey">Create New Key</button>
+            <button id="importKey">Import Private Key</button>
+            <button id="clearKey" style="background:#ff9b9b">Clear Wallet</button>
+          </div>
+          <div class="sp"></div>
+          <div id="walletInfo" class="muted">No key loaded.</div>
+        </section>
+
+        <hr style="opacity:.06;margin:14px 0" />
+
+        <section id="ipfsSection">
+          <h3>2 — Upload (Simulated IPFS or backend)</h3>
+          <label>Choose file to upload (we will compute a content-hash or send to backend)</label>
+          <input id="fileInput" type="file" />
+          <div class="sp"></div>
+          <div style="display:flex;gap:6px">
+            <button id="uploadBtn">Compute & Save CID (local)</button>
+            <button id="uploadBackendBtn">Upload to Backend</button>
+          </div>
+          <div class="sp"></div>
+          <div id="uploadResult" class="muted">No uploads yet.</div>
+        </section>
+
+        <hr style="opacity:.06;margin:14px 0" />
+
+        <section id="issueSection">
+          <h3>3 — Issue a Verifiable Credential (VC)</h3>
+          <label>Subject DID (example: did:ethr:0xabc... or did:example:alice)</label>
+          <input id="subjectDid" type="text" placeholder="did:ethr:0x..." />
+          <label>Type</label>
+          <input id="vcType" type="text" value="IdentityCredential" />
+          <label>Claim (JSON) — e.g. { "name": "Alice" }</label>
+          <textarea id="claim" rows="4">{"name":"Alice","email":"alice@example.com"}</textarea>
+          <div class="sp"></div>
+          <div style="display:flex;gap:8px">
+            <button id="issueBtn">Issue VC (sign locally)</button>
+            <button id="issueBackendBtn">Request Backend Issuer</button>
+          </div>
+          <div class="sp"></div>
+          <div id="issueResult" class="muted">No credential issued yet.</div>
+        </section>
+
+        <hr style="opacity:.06;margin:14px 0" />
+
+        <section id="verifySection">
+          <h3>4 — Verify a Credential</h3>
+          <label>Paste VC JSON (from the list or exported)</label>
+          <textarea id="vcPaste" rows="6" placeholder='Paste the saved VC JSON object here'></textarea>
+          <div class="sp"></div>
+          <button id="verifyBtn">Verify Credential Signature (local)</button>
+          <button id="verifyBackendBtn">Verify via Backend</button>
+          <div class="sp"></div>
+          <div id="verifyResult" class="muted">No verification yet.</div>
+        </section>
+
+      </main>
+
+      <aside class="card small">
+        <h3>Quick Actions & Storage</h3>
+        <div class="sp"></div>
+        <div>
+          <button id="listVCs" class="small-btn">List Stored VCs</button>
+          <button id="exportAll" class="small-btn">Export All</button>
+        </div>
+        <div class="sp"></div>
+        <div>
+          <label>Stored Credentials</label>
+          <div id="vcList" class="list muted">No credentials stored.</div>
+        </div>
+        <div class="sp"></div>
+        <div>
+          <label>Revocation (local demo)</label>
+          <input id="revokeId" type="text" placeholder="credentialId to revoke" />
+          <div class="sp"></div>
+          <button id="revokeBtn" class="small-btn">Revoke</button>
+          <div class="sp"></div>
+          <div id="revokeMsg" class="muted">No revocations yet.</div>
+        </div>
+        <div class="sp"></div>
+        <div>
+          <label>Instructions</label>
+          <div class="muted" style="font-size:13px">
+            1) Create a wallet (or import private key).<br>
+            2) Upload a file to compute demo CID or upload to backend.<br>
+            3) Issue a VC — sign locally or request backend to issue.<br>
+            4) Verify locally or via backend endpoints.<br>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <footer class="muted">This is a demo. For production: use Veramo/did-jwt-vc, IPFS pinning, and on-chain revocation. Keys should be stored securely.</footer>
+  </div>
+
+  <script>
+    // Simple frontend demo — key management + VC issuance using ethers signatures
+    const storageKey = 'did_demo_wallet_v1';
+    const vcStoreKey = 'did_demo_vcs_v1';
+    const revokedKey = 'did_demo_revoked_v1';
+
+    // util: save/load encrypted wallet with passphrase (simple AES-GCM using WebCrypto)
+    async function encryptData(pass, data) {
+      const enc = new TextEncoder();
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(pass), 'PBKDF2', false, ['deriveKey']);
+      const key = await crypto.subtle.deriveKey({name:'PBKDF2',salt:salt,iterations:250000,hash:'SHA-256'}, keyMaterial, {name:'AES-GCM',length:256}, true, ['encrypt']);
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const cipher = await crypto.subtle.encrypt({name:'AES-GCM',iv}, key, enc.encode(data));
+      // return base64 parts
+      return {salt:btoa(String.fromCharCode(...salt)),iv:btoa(String.fromCharCode(...iv)),ct:btoa(String.fromCharCode(...new Uint8Array(cipher)))};
+    }
+    async function decryptData(pass, obj) {
+      const dec = new TextDecoder();
+      const salt = Uint8Array.from(atob(obj.salt), c=>c.charCodeAt(0));
+      const iv = Uint8Array.from(atob(obj.iv), c=>c.charCodeAt(0));
+      const ct = Uint8Array.from(atob(obj.ct), c=>c.charCodeAt(0));
+      const keyMaterial = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey']);
+      const key = await crypto.subtle.deriveKey({name:'PBKDF2',salt,salt,iterations:250000,hash:'SHA-256'}, keyMaterial, {name:'AES-GCM',length:256}, true, ['decrypt']);
+      try {
+        const plain = await crypto.subtle.decrypt({name:'AES-GCM',iv}, key, ct);
+        return dec.decode(plain);
+      } catch(e) { throw new Error('Wrong passphrase or corrupted data'); }
+    }
+
+    // Wallet functions
+    let currentWallet = null;
+    const walletInfoEl = document.getElementById('walletInfo');
+    const passEl = document.getElementById('passphrase');
+
+    document.getElementById('createKey').addEventListener('click', async ()=>{
+      const pass = passEl.value || '';
+      const w = ethers.Wallet.createRandom();
+      await saveWallet(w, pass);
+      setWallet(w);
+    });
+
+    document.getElementById('importKey').addEventListener('click', async ()=>{
+      const pk = prompt('Paste private key (0x...)');
+      if(!pk) return;
+      try{
+        const w = new ethers.Wallet(pk);
+        const pass = passEl.value || '';
+        await saveWallet(w, pass);
+        setWallet(w);
+      } catch(e){ alert('Invalid private key'); }
+    });
+
+    document.getElementById('clearKey').addEventListener('click', ()=>{
+      localStorage.removeItem(storageKey);
+      currentWallet = null;
+      walletInfoEl.innerHTML = 'No key loaded.';
+    });
+
+    async function saveWallet(w, pass) {
+      const blob = JSON.stringify({privateKey:w.privateKey});
+      const enc = await encryptData(pass, blob);
+      localStorage.setItem(storageKey, JSON.stringify(enc));
+      alert('Saved encrypted key to localStorage');
+    }
+
+    async function loadWallet(pass) {
+      const raw = localStorage.getItem(storageKey);
+      if(!raw) return null;
+      try{
+        const obj = JSON.parse(raw);
+        const plain = await decryptData(pass, obj);
+        const data = JSON.parse(plain);
+        const w = new ethers.Wallet(data.privateKey);
+        return w;
+      } catch(e) { throw e; }
+    }
+
+    async function setWallet(w) {
+      currentWallet = w;
+      const did = `did:ethr:${w.address}`;
+      walletInfoEl.innerHTML = `<div><strong>Address:</strong> <span class="hash">${w.address}</span></div><div class="sp"></div><div><strong>DID:</strong> <span class="hash">${did}</span></div>`;
+    }
+
+    // Try to auto-load wallet if pass is present and storage exists
+    document.getElementById('passphrase').addEventListener('change', async ()=>{
+      const pass = passEl.value || '';
+      try{
+        const wl = await loadWallet(pass);
+        if(wl){ setWallet(wl); }
+      } catch(e){ console.warn('Failed to decrypt wallet'); }
+    });
+
+    // IPFS simulated upload: compute SHA-256 of file content -> base58-like short hex preview
+    async function computeHashOfFile(file) {
+      const buf = await file.arrayBuffer();
+      const hash = await crypto.subtle.digest('SHA-256', buf);
+      const arr = Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('');
+      // make a fake CID-like string (not real IPFS CID) but fine for demo
+      return 'cid-demo-' + arr.slice(0,40);
+    }
+
+    document.getElementById('uploadBtn').addEventListener('click', async ()=>{
+      const f = document.getElementById('fileInput').files[0];
+      if(!f){ alert('Choose a file'); return; }
+      const cid = await computeHashOfFile(f);
+      const uploads = JSON.parse(localStorage.getItem('did_demo_uploads_v1')||'[]');
+      uploads.unshift({name:f.name,size:f.size,cid,ts:Date.now()});
+      localStorage.setItem('did_demo_uploads_v1', JSON.stringify(uploads));
+      document.getElementById('uploadResult').innerHTML = `Saved demo CID: <span class="hash">${cid}</span>`;
+    });
+
+    document.getElementById('uploadBackendBtn').addEventListener('click', async ()=>{
+      const f = document.getElementById('fileInput').files[0];
+      if(!f){ alert('Choose a file'); return; }
+      const form = new FormData();
+      form.append('file', f);
+      try{
+        const res = await fetch('/api/upload', {method:'POST', body: form});
+        const j = await res.json();
+        if(res.ok){ document.getElementById('uploadResult').innerHTML = `Backend CID: <span class="hash">${j.cid}</span>`; }
+        else { document.getElementById('uploadResult').innerText = `Upload error: ${j.error || res.statusText}`; }
+      }catch(e){ document.getElementById('uploadResult').innerText = `Upload failed: ${e.message}`; }
+    });
+
+    // VC issuance: build a simple VC object and sign its canonical JSON using wallet.signMessage
+    function canonicalize(obj){ return JSON.stringify(obj, Object.keys(obj).sort()); }
+
+    document.getElementById('issueBtn').addEventListener('click', async ()=>{
+      if(!currentWallet){ alert('Load or create a wallet first'); return; }
+      const subject = document.getElementById('subjectDid').value.trim() || `did:example:${Math.random().toString(36).slice(2,8)}`;
+      const type = document.getElementById('vcType').value.trim() || 'IdentityCredential';
+      let claim;
+      try{ claim = JSON.parse(document.getElementById('claim').value); } catch(e){ alert('Claim JSON invalid'); return; }
+
+      const issuer = `did:ethr:${currentWallet.address}`;
+      const issuanceDate = new Date().toISOString();
+      const credentialId = 'vc-' + Math.random().toString(36).slice(2,10);
+
+      const vc = {
+        '@context':['https://www.w3.org/2018/credentials/v1'],
+        id: credentialId,
+        type:['VerifiableCredential', type],
+        issuer,
+        issuanceDate,
+        credentialSubject: Object.assign({id:subject}, claim)
+      };
+
+      const clear = canonicalize(vc);
+      const sig = await currentWallet.signMessage(ethers.toUtf8Bytes(clear));
+
+      const stored = {vc,signature:sig};
+      const arr = JSON.parse(localStorage.getItem(vcStoreKey) || '[]');
+      arr.unshift(stored);
+      localStorage.setItem(vcStoreKey, JSON.stringify(arr));
+      document.getElementById('issueResult').innerHTML = `Issued VC <span class="hash">${credentialId}</span> and saved locally.`;
+      updateVCList();
+    });
+
+    document.getElementById('issueBackendBtn').addEventListener('click', async ()=>{
+      const subject = document.getElementById('subjectDid').value.trim();
+      let claim;
+      try{ claim = JSON.parse(document.getElementById('claim').value); } catch(e){ alert('Claim JSON invalid'); return; }
+      const res = await fetch('/api/issue', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({subject, type: document.getElementById('vcType').value, claim})});
+      const j = await res.json();
+      if(res.ok){ document.getElementById('issueResult').innerText = `Backend issued VC id ${j.vc.id}`; updateVCList(); }
+      else { document.getElementById('issueResult').innerText = `Issue error: ${j.error}`; }
+    });
+
+    // List VCs
+    function updateVCList(){
+      const el = document.getElementById('vcList');
+      const arr = JSON.parse(localStorage.getItem(vcStoreKey) || '[]');
+      if(arr.length===0){ el.innerHTML='No credentials stored.'; return; }
+      el.innerHTML = '';
+      arr.forEach((item, idx)=>{
+        const div = document.createElement('div'); div.className='vc-item';
+        const id = item.vc.id || ('vc-'+idx);
+        div.innerHTML = `<div><strong>${id}</strong></div><div class="muted">issuer: ${item.vc.issuer}</div><div style="margin-top:6px"><button class="small-btn" onclick='exportVC(${idx})'>Export</button> <button class="small-btn" onclick='verifyFromList(${idx})'>Verify</button> <button class="small-btn' style="background:#ff9b9b" onclick='revokeFromList(${idx})'>Revoke</button></div>`;
+        el.appendChild(div);
+      });
+    }
+
+    window.exportVC = function(idx){
+      const arr = JSON.parse(localStorage.getItem(vcStoreKey) || '[]');
+      const blob = arr[idx];
+      const s = JSON.stringify(blob, null, 2);
+      prompt('Credential JSON (copy):', s);
+    }
+
+    window.verifyFromList = async function(idx){
+      const arr = JSON.parse(localStorage.getItem(vcStoreKey) || '[]');
+      const blob = arr[idx];
+      document.getElementById('vcPaste').value = JSON.stringify(blob,null,2);
+      document.getElementById('verifyBtn').click();
+    }
+
+    window.revokeFromList = function(idx){
+      const arr = JSON.parse(localStorage.getItem(vcStoreKey) || '[]');
+      const id = arr[idx].vc.id;
+      const rev = JSON.parse(localStorage.getItem(revokedKey) || '[]');
+      rev.push({id,ts:Date.now()});
+      localStorage.setItem(revokedKey, JSON.stringify(rev));
+      document.getElementById('revokeMsg').innerText = `Revoked ${id}`;
+      updateVCList();
+    }
+
+    // Revoke button
+    document.getElementById('revokeBtn').addEventListener('click', ()=>{
+      const id = document.getElementById('revokeId').value.trim();
+      if(!id){ alert('Enter credentialId to revoke'); return; }
+      const rev = JSON.parse(localStorage.getItem(revokedKey) || '[]');
+      rev.push({id,ts:Date.now()});
+      localStorage.setItem(revokedKey, JSON.stringify(rev));
+      document.getElementById('revokeMsg').innerText = `Revoked ${id}`;
+    });
+
+    // Verify credential: check signature and revocation (local) or call backend
+    document.getElementById('verifyBtn').addEventListener('click', async ()=>{
+      const txt = document.getElementById('vcPaste').value.trim();
+      if(!txt){ alert('Paste a VC JSON (export from stored list)'); return; }
+      let blob;
+      try{ blob = JSON.parse(txt); } catch(e){ alert('Invalid JSON'); return; }
+      const vc = blob.vc || blob;
+      const sig = blob.signature;
+      if(!sig){ document.getElementById('verifyResult').innerHTML = '<span class="danger">No signature found</span>'; return; }
+      const canonical = canonicalize(vc);
+      try{
+        const recovered = ethers.verifyMessage(ethers.toUtf8Bytes(canonical), sig);
+        const issuer = vc.issuer || '';
+        const issuerAddress = (issuer.startsWith('did:ethr:')) ? issuer.split(':').pop().toLowerCase() : null;
+        const ok = issuerAddress && (recovered.toLowerCase() === issuerAddress.toLowerCase());
+        const rev = JSON.parse(localStorage.getItem(revokedKey) || '[]');
+        const isRevoked = rev.some(r=>r.id===vc.id);
+        if(ok && !isRevoked){
+          document.getElementById('verifyResult').innerHTML = `<span class="success">Valid — signature matches issuer ${recovered}</span>`;
+        } else if(ok && isRevoked){
+          document.getElementById('verifyResult').innerHTML = `<span class="danger">Credential revoked (id: ${vc.id})</span>`;
+        } else {
+          document.getElementById('verifyResult').innerHTML = `<span class="danger">Signature invalid — recovered ${recovered}, expected ${issuerAddress}</span>`;
+        }
+      } catch(e){ document.getElementById('verifyResult').innerHTML = `<span class="danger">Verification error: ${e.message}</span>`; }
+    });
+
+    document.getElementById('verifyBackendBtn').addEventListener('click', async ()=>{
+      const txt = document.getElementById('vcPaste').value.trim();
+      if(!txt){ alert('Paste a VC JSON (export from stored list)'); return; }
+      try{
+        const res = await fetch('/api/verify', {method:'POST', headers:{'Content-Type':'application/json'}, body: txt});
+        const j = await res.json();
+        if(res.ok){ document.getElementById('verifyResult').innerText = `Backend: ${JSON.stringify(j)}`; }
+        else { document.getElementById('verifyResult').innerText = `Verify error: ${j.error}`; }
+      } catch(e){ document.getElementById('verifyResult').innerText = `Verify failed: ${e.message}`; }
+    });
+
+    document.getElementById('listVCs').addEventListener('click', updateVCList);
+    document.getElementById('exportAll').addEventListener('click', ()=>{
+      const arr = JSON.parse(localStorage.getItem(vcStoreKey) || '[]');
+      const s = JSON.stringify(arr,null,2);
+      const a = document.createElement('a');
+      const blob = new Blob([s], {type:'application/json'});
+      a.href = URL.createObjectURL(blob);
+      a.download = 'vcs-export.json';
+      a.click();
+    });
+
+    // init
+    updateVCList();
+  </script>
+</body>
+</html>
